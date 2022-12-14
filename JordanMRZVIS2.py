@@ -31,20 +31,33 @@ def fact_fun(n):
 
 
 class JordanNetwork:
-    def __init__(self, p, L, e, learning_rate):
-        self.e = e
+    def __init__(self, p, iterations_count, learning_rate):
+        self.iterations_count = iterations_count
 
-        self.p = p
+        self.beta1 = 0.9
+        self.beta2 = 0.999
+        self.eps = 1e-8
 
         self.ilayer_size = p + 1
         self.hlayer_size = int(self.ilayer_size / 2)
         self.olayer_size = self.ilayer_size
-
+         
         self.w_size = p + 1
 
-        self.L = L
+        self.m_tb_first = 0
+        self.v_tb_first = 0
 
-        self.momentum = 0.9
+        self.m_tb_second = 0
+        self.v_tb_second = 0
+
+        self.m_t_first = 0
+        self.v_t_first = 0
+
+        self.m_t_second = 0
+        self.v_t_second = 0
+
+        self.m_t_third = 0
+        self.v_t_third = 0
 
         self.prevDb1 = 0
         self.prevDb2 = 0
@@ -52,6 +65,10 @@ class JordanNetwork:
         self.prevDW1 = 0
         self.prevDW2 = 0
         self.prevDW3 = 0
+
+        self.GW1 = 0
+        self.GW2 = 0
+        self.GW3 = 0
 
         self.learning_rate = learning_rate
 
@@ -80,8 +97,10 @@ class JordanNetwork:
         error = 10000000
         previous_error = 10000
 
+        count_of_coinc = 0
+
         iteration_number = 0
-        while iteration_number < 1e6:
+        while iteration_number < self.iterations_count:
             previous_error = error
             error = 0
 
@@ -91,7 +110,6 @@ class JordanNetwork:
 
                 hidden = data @ self.W_first + self.previous_output @ self.W_third + self.b_first @ self.bW_first
                 out = hidden @ self.W_second + self.b_second @ self.bW_second
-
 
                 delta = out - train_etalons[input_sequence]
 
@@ -104,19 +122,36 @@ class JordanNetwork:
 
                 self.previous_output = out
 
-                self.prevDb1 = self.momentum * self.prevDb1 - learning_rate * b_first_delta
-                self.prevDb2 = self.momentum * self.prevDb2 - learning_rate * b_second_delta
 
-                self.prevDW1 = self.momentum * self.prevDW1 - learning_rate * W_first_delta
-                self.prevDW2 = self.momentum * self.prevDW2 - learning_rate * W_second_delta
-                self.prevDW3 = self.momentum * self.prevDW3 - learning_rate * W_third_delta
+                self.m_tb_first = self.beta1 * self.m_tb_first + (1 - self.beta1) * b_first_delta
+                self.v_tb_first = self.beta2 * self.v_tb_first + (1 - self.beta2) * b_first_delta ** 2
+
+                self.m_tb_second = self.beta1 * self.m_tb_second + (1 - self.beta1) * b_second_delta
+                self.v_tb_second = self.beta2 * self.v_tb_second + (1 - self.beta2) * b_second_delta ** 2
+
+                self.m_t_first = self.beta1 * self.m_t_first + (1 - self.beta1) * W_first_delta
+                self.v_t_first = self.beta2 * self.v_t_first + (1 - self.beta2) * W_first_delta ** 2
+
+                self.m_t_second = self.beta1 * self.m_t_second + (1 - self.beta1) * W_second_delta
+                self.v_t_second = self.beta2 * self.v_t_second + (1 - self.beta2) * W_second_delta ** 2
+
+                self.m_t_third = self.beta1 * self.m_t_third + (1 - self.beta1) * W_third_delta
+                self.v_t_third = self.beta2 * self.v_t_third + (1 - self.beta2) * W_third_delta ** 2
+
+                self.prevDb1 = - learning_rate / (np.sqrt(self.v_tb_first) + self.eps) * self.m_tb_first
+                self.prevDb2 = - learning_rate / (np.sqrt(self.v_tb_second) + self.eps) * self.m_tb_second
+
+                self.prevDW1 = - learning_rate / (np.sqrt(self.v_t_first) + self.eps) * self.m_t_first
+                self.prevDW2 = - learning_rate / (np.sqrt(self.v_t_second) + self.eps) * self.m_t_second
+                self.prevDW3 = - learning_rate / (np.sqrt(self.v_t_third) + self.eps) * self.m_t_third
 
                 self.b_first += self.prevDb1
                 self.b_second += self.prevDb2
 
                 self.W_first += self.prevDW1
                 self.W_second += self.prevDW2
-                self.W_third += self.prevDW3
+                self.W_third += self.prevDW3    
+
 
                 data[0][...] = train_matrix[input_sequence]
 
@@ -131,7 +166,7 @@ class JordanNetwork:
                
 
 if __name__ == '__main__':
-    k = 10 # Размер генерируемой последовательности
+    k = 10
 
     sequences = [
         [fib(i) for i in range(k)],
@@ -142,14 +177,15 @@ if __name__ == '__main__':
 
     sequence_functions = [fib, fact_fun, sin, pow_fun]
 
+    sequence_names = ['Fibonacci', 'log_2 n!', 'Sin(i * pi / 2)', '1.125^n']
+
     q = k - 1
-    p = 1 # Размер окна = p + 1
-    L = q - p # Размер тренировочной выборки
+    p = 1
+    L = q - p 
 
-    e = 0.0004
-    learning_rate = 0.00007
+    learning_rate = 0.0007
 
-    N = 1000000 # Количество итераций
+    N = 200000 
 
     print("Sequences:")
     for index, i in enumerate(sequences):
@@ -164,9 +200,8 @@ if __name__ == '__main__':
         choice = len(sequences)
     
     current_sequence = sequences[choice - 1]
-
-    # L = количество строк; p + 1 - размер окна
-    train_row, train_col = L, p + 1 # Размеры тренировочной матриц
+    
+    train_row, train_col = L, p + 1 
 
     train_matrix = np.empty((train_row, train_col))
     train_etalons = np.empty((train_row, train_col))
@@ -176,26 +211,19 @@ if __name__ == '__main__':
             train_matrix[i, j] = current_sequence[i + j]
             train_etalons[i, j] = current_sequence[i + j + 1]
 
-    print(train_etalons)
-
-    #train_etalons[train_row - 1][0] = current_sequence[-1]
-
-    network = JordanNetwork(p, L, e, learning_rate=learning_rate)
-
+    network = JordanNetwork(p, N, learning_rate)
     network.backpropogation(train_matrix, train_etalons)
 
     while True:
-        #to_test = input(f"Enter sequence(size = {p + 1}): ")
-        #sequence = [int(item) for item in to_test.split(' ')]
-
         start = random.randint(k, k + 20)
 
         sequence = [sequence_functions[choice - 1](i) for i in range(start, start + p + 1)]
 
+        print("Sequence name -", sequence_names[choice - 1])
         print("Sequence for test", sequence)
 
         print("Network output: ", network.forward(sequence))
-        print("What you should see: ", sequence_functions[choice - 1](start + p + 1))
+        print("What you should see: ", [sequence_functions[choice - 1](i) for i in range(start + 1, start + p + 2)])
 
         answer = input("Do you want to repeat test?[Y/N]")
 
